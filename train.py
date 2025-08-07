@@ -130,7 +130,7 @@ def parse_args():
     parser.add_argument("--lora_rank", type=int, default=64, help="The rank for LoRA.")
 
     # Dataset arguments
-    parser.add_argument("--dataset_path", type=str, default="small_dataset.json", help="Path to the directory")
+    parser.add_argument("--dataset_path", type=str, default="./small_dataset.json", help="Path to the directory")
 
     # Training arguments
     parser.add_argument("--learning_rate", type=float, default=5e-6, help="The learning rate for the optimizer.")
@@ -208,7 +208,7 @@ def main():
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
-
+        use_vllm=True,                  
         adam_beta1=0.9,
         adam_beta2=0.99,
         weight_decay=0.1,
