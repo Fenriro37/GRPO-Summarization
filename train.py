@@ -130,13 +130,13 @@ def parse_args():
     parser.add_argument("--lora_rank", type=int, default=64, help="The rank for LoRA.")
 
     # Dataset arguments
-    parser.add_argument("--dataset_path", type=str, default="./final_dataset_dict", help="Path to the directory")
+    parser.add_argument("--dataset_path", type=str, default="small_dataset.json", help="Path to the directory")
 
     # Training arguments
     parser.add_argument("--learning_rate", type=float, default=5e-6, help="The learning rate for the optimizer.")
     parser.add_argument("--max_steps", type=int, default=5, help="Total number of training steps.")
-    parser.add_argument("--batch_size", type=int, default=2, help="Per-device training batch size.")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=2, help="Number of steps for gradient accumulation.")
+    parser.add_argument("--batch_size", type=int, default=1, help="Per-device training batch size.")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=4, help="Number of steps for gradient accumulation.")
     parser.add_argument("--logging_steps", type=int, default=10, help="Log metrics every N steps.")
     parser.add_argument("--save_steps", type=int, default=50, help="Save a checkpoint every N steps.")
     parser.add_argument("--output_dir", type=str, default="outputs", help="Directory to save model checkpoints.")

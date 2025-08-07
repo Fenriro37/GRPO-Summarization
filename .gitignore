@@ -1,0 +1,5 @@
+# Ignore the build directory and everything inside it
+build/
+
+# Ignore the dataset JSON file
+small_dataset.json
