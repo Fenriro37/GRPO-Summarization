@@ -1,3 +1,4 @@
+import torch.distributed
 import argparse
 import os
 import torch
@@ -9,40 +10,16 @@ from trl import GRPOConfig, GRPOTrainer
 import re
 import nltk
 import wandb
-wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
+from huggingface_hub import HfApi, create_repo, login
+wandb.login(key= os.getenv("WANB_TOKEN"))
+login(os.getenv("HUGGING_FACE_HUB_TOKEN"))
 # ===================================================================================
 # 1. REWARD FUNCTIONS
-# 
+#
 # ===================================================================================
 # Load and prep dataset
-SYSTEM_PROMPT = """You are a precise summarization expert. Your task is to create a summary that captures the essential information from the provided text while strictly adhering to the specified length constraint.
 
-INSTRUCTIONS:
-1. Analyze the text to identify the most critical information, key arguments, and main conclusions
-2. Prioritize factual content over opinions unless opinions are central to the text's purpose
-3. Maintain logical flow and coherence in your summary
-4. Count your words/sentences carefully to meet the exact requirement
 
-OUTPUT FORMAT:
-- First, provide a brief explanation (2-3 sentences) between <explanation></explanation> tags explaining your summarization strategy and why the specified length is appropriate for capturing the key information
-- Then, provide your summary between <summary></summary> tags
-- Ensure your summary contains exactly the requested number of words/sentences
-
-QUALITY REQUIREMENTS:
-- Preserve the original meaning and tone
-- Use clear, concise language
-- Avoid redundancy and filler words
-- Include specific details, numbers, or examples only if they are crucial to understanding
-- Ensure each sentence (if counting sentences) or word (if counting words) adds meaningful value"""
-
-XML_COT_FORMAT = """\
-<reasoning>
-{reasoning}
-</reasoning>
-<answer>
-{answer}
-</answer>
-"""
 def count_words(text):
     """Counts words in a string using a simple split."""
     if not text:
@@ -56,16 +33,17 @@ def count_sentences(text):
     return len(nltk.sent_tokenize(text))
 
 def extract_xml_answer(text: str) -> str:
-    answer = text.split("<summary>")[-1]
-    answer = answer.split("</summary>")[0]
-    return answer.strip()
+    match = re.search(r"<summary>(.*?)</summary>", text, re.DOTALL)    
+    if match:
+        return match.group(1).strip()
+    return None
 def reward_word_count_normalized(completions, target_word_count, tolerance=5, **kwargs):
     """
     Calculates a NORMALIZED reward for word count with a tolerance window.
     The penalty is scaled by the target word count to keep rewards balanced.
     """
     scores = []
-    FORMAT_FAILURE_PENALTY = -5.0
+    FORMAT_FAILURE_PENALTY = -1.0
 
     for completion, target_words in zip(completions, target_word_count):
         if target_words is None:
@@ -91,7 +69,7 @@ def reward_word_count_normalized(completions, target_word_count, tolerance=5, **
     return scores
 def reward_sentence_count_normalized(completions, target_sentence_count, **kwargs):
     scores = []
-    FORMAT_FAILURE_PENALTY = -5.0
+    FORMAT_FAILURE_PENALTY = -1.0
 
     for completion, target_sentences in zip(completions, target_sentence_count):
         if target_sentences is None:
@@ -115,6 +93,36 @@ def reward_sentence_count_normalized(completions, target_sentence_count, **kwarg
 
     return scores
 
+def reward_for_structure_normalized(completions, **kwargs) -> list[float]:
+    scores = []
+    full_pattern = re.compile(r"^\s*<reasoning>.*?</reasoning>\s*<summary>.*?</summary>\s*$", re.DOTALL)
+
+    for completion in completions:
+        text = completion[0]["content"]
+
+        if full_pattern.search(text):
+            scores.append(0.0)  # Perfect score!
+            continue
+
+        penalty = 0.0
+
+        if "<reasoning>" not in text:
+            penalty -= 0.25
+        if "</reasoning>" not in text:
+            penalty -= 0.25
+        if "<summary>" not in text:
+            penalty -= 0.25
+        if "</summary>" not in text:
+            penalty -= 0.25
+
+
+        temp_text = text.strip()
+        if not temp_text.startswith("<reasoning>") or not temp_text.endswith("</summary>"):
+             penalty -= 0.2 # Add an extra penalty for extraneous text at start/end
+
+        scores.append(max(-1.0, penalty))
+
+    return scores
 # ===================================================================================
 # 2. ARGUMENT PARSING
 #    This function defines the command-line arguments for our script.
@@ -124,7 +132,8 @@ def parse_args():
 
     # Model and Tokenizer arguments
     parser.add_argument("--model_name", type=str, default="meta-llama/meta-Llama-3.1-8B-Instruct", help="The base model to finetune.")
-    parser.add_argument("--max_seq_length", type=int, default=2048, help="Maximum sequence length for the model.")
+    parser.add_argument("--max_seq_length", type=int, default=4096, help="Maximum sequence length for the model.")
+    parser.add_argument("--max_completion_length", type=int, default=800, help="Maximum completion length for the model.")
 
     # LoRA arguments
     parser.add_argument("--lora_rank", type=int, default=64, help="The rank for LoRA.")
@@ -140,10 +149,11 @@ def parse_args():
     parser.add_argument("--logging_steps", type=int, default=10, help="Log metrics every N steps.")
     parser.add_argument("--save_steps", type=int, default=50, help="Save a checkpoint every N steps.")
     parser.add_argument("--output_dir", type=str, default="outputs", help="Directory to save model checkpoints.")
+    parser.add_argument("--lora_dir", type=str, default="lora_adapters", help="Directory to save lora.")
 
     # W&B arguments
     parser.add_argument("--wandb_project", type=str, default="llama3-grpo-finetuning", help="The Weights & Biases project name.")
-
+    parser.add_argument("--hf_repo_name", type=str, default="M4TT1A/my-llama3-grpo-lora", help="The name of the repository on the Hugging Face Hub (e.g., 'your-username/my-llama3-grpo-lora').")
     return parser.parse_args()
 
 # ===================================================================================
@@ -157,9 +167,10 @@ def main():
 
     try:
       print(f"Loading dataset from {args.dataset_path}...")
+      #dataset_path = '/content/drive/MyDrive/dataset_with_len_filtered.json'
       with open(args.dataset_path, "r", encoding="utf-8") as f:
-          data = json.load(f)
-      
+         data = json.load(f)
+
       dataset_dict = DatasetDict({
           'train': Dataset.from_list(data['train']),
           'validation': Dataset.from_list(data['validation']),
@@ -176,8 +187,8 @@ def main():
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
-        load_in_4bit=True,
-        fast_inference=False,
+        load_in_4bit=False,
+        fast_inference=True,
         max_lora_rank=args.lora_rank,
         gpu_memory_utilization=0.6,
     )
@@ -194,21 +205,20 @@ def main():
         random_state=3407,
     )
 
-    MAX_PROMPT_LENGTH = 1536
-    COMPLETION_CEILING = args.max_seq_length - MAX_PROMPT_LENGTH
+    MAX_PROMPT_LENGTH =  args.max_seq_length- args.max_completion_length
+    COMPLETION_CEILING = args.max_completion_length
 
     training_args = GRPOConfig(
         run_name=run_name,
         report_to="wandb",
         output_dir=args.output_dir,
-
+        use_vllm=True,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
-        use_vllm=True,                  
         adam_beta1=0.9,
         adam_beta2=0.99,
         weight_decay=0.1,
@@ -227,7 +237,8 @@ def main():
         tokenizer=tokenizer,
         reward_funcs=[
             reward_word_count_normalized,
-            reward_sentence_count_normalized
+            reward_sentence_count_normalized,
+            reward_for_structure_normalized
         ],
         args=training_args,
         train_dataset=dataset_dict['train'],
@@ -238,12 +249,28 @@ def main():
     trainer.train()
     print("Training finished.")
 
-    final_model_path = os.path.join(args.output_dir, f"model_{run_name}")
-    trainer.save_model(final_model_path)
-    print(f"Final model saved to {final_model_path}")
-
     wandb.finish()
 
+    if args.hf_repo_name:
+        print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
+
+        # Create the repo if it doesn't exist
+        create_repo(args.hf_repo_name, exist_ok=True, private=False) # Set private=True if needed
+
+        # Push the LoRA adapters
+        model.push_to_hub(args.hf_repo_name, use_auth_token=True)
+
+        # Push the tokenizer
+        tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
+
+        print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
+    else:
+        print("No --hf_repo_name provided. Saving adapters locally to 'lora_model'.")
+        model.save_pretrained("lora_model")
+        tokenizer.save_pretrained("lora_model")
+
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
 # ===================================================================================
 # 4. SCRIPT ENTRYPOINT
 # ===================================================================================
