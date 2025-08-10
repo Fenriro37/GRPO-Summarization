@@ -8,6 +8,7 @@ docker run \
     -v "$PHYS_DIR":/workspace \
     -v "$LLM_CACHE_DIR":"$DOCKER_INTERNAL_CACHE_DIR" \
     -e HF_HOME="$DOCKER_INTERNAL_CACHE_DIR" \
+    -e HF_TOKEN="$HF_TOKEN" \
     --rm \
     --memory="30g" \
     --gpus "device=${CUDA_VISIBLE_DEVICES}" \

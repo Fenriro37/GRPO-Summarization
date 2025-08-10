@@ -11,8 +11,7 @@ import re
 import nltk
 import wandb
 from huggingface_hub import HfApi, create_repo, login
-wandb.login(key= os.getenv("WANB_TOKEN"))
-login(os.getenv("HUGGING_FACE_HUB_TOKEN"))
+wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
 # ===================================================================================
 # 1. REWARD FUNCTIONS
 #
@@ -187,10 +186,11 @@ def main():
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
-        load_in_4bit=False,
+        load_in_4bit=True,
         fast_inference=True,
+        #device_map = "balanced",
         max_lora_rank=args.lora_rank,
-        gpu_memory_utilization=0.6,
+        gpu_memory_utilization=0.7,
     )
 
     model = FastLanguageModel.get_peft_model(
