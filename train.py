@@ -134,7 +134,7 @@ def parse_args():
     parser.add_argument("--max_completion_length", type=int, default=800, help="Maximum completion length for the model.")
 
     # LoRA arguments
-    parser.add_argument("--lora_rank", type=int, default=64, help="The rank for LoRA.")
+    parser.add_argument("--lora_rank", type=int, default=16, help="The rank for LoRA.")
 
     # Dataset arguments
     parser.add_argument("--dataset_path", type=str, default="./small_dataset.json", help="Path to the directory")
@@ -165,7 +165,7 @@ def main():
     run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
     
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    torch.cuda.set_device(local_rank)
+    #torch.cuda.set_device(local_rank)
 
     if dist.is_available() and not dist.is_initialized():
       dist.init_process_group(backend="nccl", init_method="env://")
@@ -201,10 +201,11 @@ def main():
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
         load_in_4bit=True,
-        fast_inference=True,
-        #device_map = "auto",
+        fast_inference=False,
+        device_map = "auto",
         max_lora_rank=args.lora_rank,
-        gpu_memory_utilization=0.7,
+        gpu_memory_utilization=0.8,
+        use_vllm=False,  # disable vLLM
     )
 
     model = FastLanguageModel.get_peft_model(
@@ -221,12 +222,12 @@ def main():
 
     MAX_PROMPT_LENGTH =  args.max_seq_length- args.max_completion_length
     COMPLETION_CEILING = args.max_completion_length
-
+    print('Befoere training')
     training_args = GRPOConfig(
         run_name=run_name,
         report_to="wandb",
         output_dir=args.output_dir,
-        use_vllm=True,
+        use_vllm=False,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
