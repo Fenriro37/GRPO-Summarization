@@ -7,4 +7,4 @@ export HF_TOKEN="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"
 MAX_STEPS=5
 DATASET_PATH="/workspace/dataset_with_len_filtered.json"
 
-sbatch -N 1 --gpus=nvidia_geforce_rtx_3090:1 run_docker.sh --max_steps $MAX_STEPS --dataset_path $DATASET_PATH
+sbatch -N 1 --gpus=nvidia_geforce_rtx_3090:2 run_docker.sh --max_steps $MAX_STEPS --dataset_path $DATASET_PATH

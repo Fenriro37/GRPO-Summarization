@@ -11,7 +11,7 @@ docker run \
     -e HF_TOKEN="$HF_TOKEN" \
     --rm \
     --memory="30g" \
-    --gpus "device=${CUDA_VISIBLE_DEVICES}" \
+    --gpus all \
     maranzana/project \
     "/workspace/train.sh" \
     "$@" 

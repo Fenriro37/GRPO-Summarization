@@ -7,4 +7,6 @@ ls -l /workspace
 echo "-----------------------------------------------------"
 echo "--- train.sh: Executing python script with args: $@ ---"
 
-python3 /workspace/train.py "$@"
+NUM_GPUS=2
+
+torchrun --nproc_per_node=$NUM_GPUS /workspace/train.py "$@"

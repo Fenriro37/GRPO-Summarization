@@ -1,4 +1,4 @@
-import torch.distributed
+import torch.distributed as dist
 import argparse
 import os
 import torch
@@ -11,7 +11,6 @@ import re
 import nltk
 import wandb
 from huggingface_hub import HfApi, create_repo, login
-wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
 # ===================================================================================
 # 1. REWARD FUNCTIONS
 #
@@ -163,6 +162,14 @@ def main():
 
     os.environ["WANDB_PROJECT"] = args.wandb_project
     run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
+    if dist.is_available() and not dist.is_initialized():
+      dist.init_process_group(backend="nccl")
+      print(f"Initialized distributed process group with rank {dist.get_rank()} and world size {dist.get_world_size()}.")
+
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    is_main_process = (local_rank == 0)
+    if is_main_process:
+      wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
 
     try:
       print(f"Loading dataset from {args.dataset_path}...")
@@ -188,7 +195,7 @@ def main():
         max_seq_length=args.max_seq_length,
         load_in_4bit=True,
         fast_inference=True,
-        #device_map = "balanced",
+        device_map = "auto",
         max_lora_rank=args.lora_rank,
         gpu_memory_utilization=0.7,
     )
@@ -219,6 +226,7 @@ def main():
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
+        ddp_find_unused_parameters = False,
         adam_beta1=0.9,
         adam_beta2=0.99,
         weight_decay=0.1,
@@ -251,7 +259,7 @@ def main():
 
     wandb.finish()
 
-    if args.hf_repo_name:
+    if args.hf_repo_name and is_main_process:
         print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
 
         # Create the repo if it doesn't exist
@@ -264,13 +272,13 @@ def main():
         tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
         print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
-    else:
+    elif is_main_process:
         print("No --hf_repo_name provided. Saving adapters locally to 'lora_model'.")
         model.save_pretrained("lora_model")
         tokenizer.save_pretrained("lora_model")
 
-    if torch.distributed.is_initialized():
-        torch.distributed.destroy_process_group()
+    if dist.is_initialized():
+        dist.destroy_process_group()
 # ===================================================================================
 # 4. SCRIPT ENTRYPOINT
 # ===================================================================================
