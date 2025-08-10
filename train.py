@@ -158,16 +158,23 @@ def parse_args():
 # 3. MAIN TRAINING FUNCTION
 # ===================================================================================
 def main():
+  
     args = parse_args()
 
     os.environ["WANDB_PROJECT"] = args.wandb_project
     run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
+    
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    torch.cuda.set_device(local_rank)
+
     if dist.is_available() and not dist.is_initialized():
-      dist.init_process_group(backend="nccl")
+      dist.init_process_group(backend="nccl", init_method="env://")
+      print(f"rank {dist.get_rank() if dist.is_initialized() else 0} local_rank {local_rank}, torch.cuda.current_device: {torch.cuda.current_device()}, device_count: {torch.cuda.device_count()}")
+
       print(f"Initialized distributed process group with rank {dist.get_rank()} and world size {dist.get_world_size()}.")
 
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    is_main_process = (local_rank == 0)
+    is_main_process = (int(os.environ.get("LOCAL_RANK", 0)) == 0)
+
     if is_main_process:
       wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
 
@@ -195,7 +202,7 @@ def main():
         max_seq_length=args.max_seq_length,
         load_in_4bit=True,
         fast_inference=True,
-        device_map = "auto",
+        #device_map = "auto",
         max_lora_rank=args.lora_rank,
         gpu_memory_utilization=0.7,
     )

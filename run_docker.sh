@@ -9,9 +9,13 @@ docker run \
     -v "$LLM_CACHE_DIR":"$DOCKER_INTERNAL_CACHE_DIR" \
     -e HF_HOME="$DOCKER_INTERNAL_CACHE_DIR" \
     -e HF_TOKEN="$HF_TOKEN" \
+    -e NCCL_DEBUG=INFO \
+    -e NCCL_IB_DISABLE=1 \
+    -e NCCL_SHM_DISABLE=0 \
     --rm \
     --memory="30g" \
     --gpus all \
+    --shm-size=8g \
     maranzana/project \
     "/workspace/train.sh" \
     "$@" 
