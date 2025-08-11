@@ -11,6 +11,12 @@ import re
 import nltk
 import wandb
 from huggingface_hub import HfApi, create_repo, login
+from accelerate import Accelerator
+
+accelerator = Accelerator()
+rank_idx = accelerator.process_index
+print(f"[PID {os.getpid()}, Rank {rank_idx}] Accelerator initialized. Distributed: {accelerator.distributed_type}, Device: {accelerator.device}, Num_processes: {accelerator.num_processes}", flush=True)
+
 # ===================================================================================
 # 1. REWARD FUNCTIONS
 #
@@ -164,19 +170,11 @@ def main():
     os.environ["WANDB_PROJECT"] = args.wandb_project
     run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
     
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    #torch.cuda.set_device(local_rank)
 
-    if dist.is_available() and not dist.is_initialized():
-      dist.init_process_group(backend="nccl", init_method="env://")
-      print(f"rank {dist.get_rank() if dist.is_initialized() else 0} local_rank {local_rank}, torch.cuda.current_device: {torch.cuda.current_device()}, device_count: {torch.cuda.device_count()}")
 
-      print(f"Initialized distributed process group with rank {dist.get_rank()} and world size {dist.get_world_size()}.")
-
-    is_main_process = (int(os.environ.get("LOCAL_RANK", 0)) == 0)
-
-    if is_main_process:
-      wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
+    wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
+    print(f"[PID {os.getpid()}, Rank {rank_idx}] Loading model...", flush=True)
+    print("*"*50)
 
     try:
       print(f"Loading dataset from {args.dataset_path}...")
@@ -197,17 +195,21 @@ def main():
         print(f"Error processing dataset file: {e}. Ensure it's a valid JSON with 'train', 'validation', and 'test' keys.")
         return
 
+    os.environ["GRPO_VLLM_DEVICE"] = str(accelerator.device)
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
         load_in_4bit=True,
-        fast_inference=False,
+        fast_inference=True,
         device_map = "auto",
         max_lora_rank=args.lora_rank,
-        gpu_memory_utilization=0.8,
-        use_vllm=False,  # disable vLLM
+        gpu_memory_utilization=0.6,
+        #attn_implementation = "eager",
+        device_map = {"": accelerator.device},
     )
-
+    print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
+    print("*"*50)
     model = FastLanguageModel.get_peft_model(
         model,
         r=args.lora_rank,
@@ -227,7 +229,7 @@ def main():
         run_name=run_name,
         report_to="wandb",
         output_dir=args.output_dir,
-        use_vllm=False,
+        use_vllm=True,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
@@ -262,31 +264,35 @@ def main():
     )
 
     print("Starting training...")
+    trainer = accelerator.prepare(trainer)
+    print(f"[PID {os.getpid()}, Rank {rank_idx}] Training with GRPO after accelerator...")
     trainer.train()
     print("Training finished.")
 
-    wandb.finish()
+    accelerator.wait_for_everyone()
 
-    if args.hf_repo_name and is_main_process:
-        print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
+    if args.hf_repo_name and accelerator.is_main_process:   
+        wandb.finish()
+        print(f"Inside if")
+
+        #print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
 
         # Create the repo if it doesn't exist
-        create_repo(args.hf_repo_name, exist_ok=True, private=False) # Set private=True if needed
+        #create_repo(args.hf_repo_name, exist_ok=True, private=False) # Set private=True if needed
 
         # Push the LoRA adapters
-        model.push_to_hub(args.hf_repo_name, use_auth_token=True)
+        #model.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
         # Push the tokenizer
-        tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
+        #tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
-        print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
-    elif is_main_process:
+        #print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
+    elif accelerator.is_main_process::
+        wandb.finish()
+
         print("No --hf_repo_name provided. Saving adapters locally to 'lora_model'.")
         model.save_pretrained("lora_model")
         tokenizer.save_pretrained("lora_model")
-
-    if dist.is_initialized():
-        dist.destroy_process_group()
 # ===================================================================================
 # 4. SCRIPT ENTRYPOINT
 # ===================================================================================
