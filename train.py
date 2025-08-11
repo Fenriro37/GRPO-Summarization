@@ -166,12 +166,11 @@ def parse_args():
 def main():
   
     args = parse_args()
-    if accelerator.is_main_process:
-        os.environ["WANDB_PROJECT"] = args.wandb_project
-        run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
-        wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
-    print(f"[PID {os.getpid()}, Rank {rank_idx}] Loading model...", flush=True)
-    print("*"*50)
+    #if accelerator.is_main_process:
+    os.environ["WANDB_PROJECT"] = args.wandb_project
+    run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
+    wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
+
 
     try:
       print(f"Loading dataset from {args.dataset_path}...")
@@ -192,7 +191,6 @@ def main():
         print(f"Error processing dataset file: {e}. Ensure it's a valid JSON with 'train', 'validation', and 'test' keys.")
         return
 
-    os.environ["GRPO_VLLM_DEVICE"] = str(accelerator.device)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model_name,
@@ -200,10 +198,10 @@ def main():
         load_in_4bit=True,
         fast_inference=True,
         max_lora_rank=args.lora_rank,
-        gpu_memory_utilization=0.6,
+        #gpu_memory_utilization=0.6,
         #attn_implementation = "eager",
-        #device_map = "auto",
-        device_map = {"": accelerator.device},
+        device_map = "auto",
+        #device_map = {"": accelerator.device},
     )
     print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
     print("*"*50)
@@ -233,7 +231,6 @@ def main():
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
-        ddp_find_unused_parameters = False,
         adam_beta1=0.9,
         adam_beta2=0.99,
         weight_decay=0.1,
@@ -260,15 +257,13 @@ def main():
         eval_dataset=dataset_dict['validation'],
     )
 
-    print("Starting training...")
-    trainer = accelerator.prepare(trainer)
-    print(f"[PID {os.getpid()}, Rank {rank_idx}] Training with GRPO after accelerator...")
+    print(f"[PID {os.getpid()}, Rank {accelerator.process_index}] Starting training, will connect to vLLM server for generation...")
     trainer.train()
     print("Training finished.")
 
-    accelerator.wait_for_everyone()
+    #accelerator.wait_for_everyone()
 
-    if args.hf_repo_name and accelerator.is_main_process:   
+    if args.hf_repo_name:   
         wandb.finish()
         print('before unwrap')
         unwrapped_model = accelerator.unwrap_model(trainer.model)
@@ -286,7 +281,7 @@ def main():
         #tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
         #print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
-    elif accelerator.is_main_process:
+    else:
         wandb.finish()
 
         print("No --hf_repo_name provided. Saving adapters locally to 'lora_model'.")
