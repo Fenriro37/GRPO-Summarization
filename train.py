@@ -166,13 +166,10 @@ def parse_args():
 def main():
   
     args = parse_args()
-
-    os.environ["WANDB_PROJECT"] = args.wandb_project
-    run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
-    
-
-
-    wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
+    if accelerator.is_main_process:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+        run_name = f"grpo-rank-{args.lora_rank}-lr-{args.learning_rate}-steps-{args.max_steps}"
+        wandb.login(key='4c65a1c79b0c2cb47aaf9b96f87b38d2abd661b1')
     print(f"[PID {os.getpid()}, Rank {rank_idx}] Loading model...", flush=True)
     print("*"*50)
 
@@ -202,10 +199,10 @@ def main():
         max_seq_length=args.max_seq_length,
         load_in_4bit=True,
         fast_inference=True,
-        device_map = "auto",
         max_lora_rank=args.lora_rank,
         gpu_memory_utilization=0.6,
         #attn_implementation = "eager",
+        #device_map = "auto",
         device_map = {"": accelerator.device},
     )
     print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
@@ -273,6 +270,8 @@ def main():
 
     if args.hf_repo_name and accelerator.is_main_process:   
         wandb.finish()
+        print('before unwrap')
+        unwrapped_model = accelerator.unwrap_model(trainer.model)
         print(f"Inside if")
 
         #print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
@@ -287,7 +286,7 @@ def main():
         #tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
         #print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
-    elif accelerator.is_main_process::
+    elif accelerator.is_main_process:
         wandb.finish()
 
         print("No --hf_repo_name provided. Saving adapters locally to 'lora_model'.")

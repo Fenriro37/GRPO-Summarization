@@ -9,4 +9,7 @@ echo "--- train.sh: Executing python script with args: $@ ---"
 
 NUM_GPUS=2
 
-torchrun --nproc_per_node=$NUM_GPUS /workspace/train.py "$@"
+accelerate launch \
+    --multi_gpu \
+    --num_processes=$NUM_GPUS \
+    /workspace/train.py "$@"
