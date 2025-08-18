@@ -196,9 +196,11 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
-        device_map="auto",  
-        load_in_4bit=True,  
+        #device_map="auto",  
+        torch_dtype=torch.bfloat16,  
     )
+
+    #model.gradient_checkpointing_enable()
 
     lora_config = LoraConfig(
         r=args.lora_rank,
@@ -207,10 +209,10 @@ def main():
             "gate_proj", "up_proj", "down_proj",
         ],
         lora_alpha=args.lora_rank,
-        gradient_checkpointing=True,  
     )
 
     model = get_peft_model(model, lora_config)
+
     print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
     print("*"*50)
 
@@ -222,6 +224,9 @@ def main():
         report_to="wandb",
         output_dir=args.output_dir,
         use_vllm=True,
+        vllm_mode="colocate",
+        vllm_tensor_parallel_size=1,
+        vllm_gpu_memory_utilization=0.4,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
@@ -235,6 +240,7 @@ def main():
         lr_scheduler_type="cosine",
         optim="paged_adamw_8bit",
         max_grad_norm=0.1,
+        ds3_gather_for_generation=False,
 
         num_generations=4,
         max_prompt_length=MAX_PROMPT_LENGTH,
@@ -243,7 +249,7 @@ def main():
 
     trainer = GRPOTrainer(
         model=model,
-        tokenizer=tokenizer,
+        #tokenizer=tokenizer,
         reward_funcs=[
             reward_word_count_normalized,
             reward_sentence_count_normalized,

@@ -62,3 +62,4 @@ setproctitle
 openai-harmony>=0.0.3
 nltk
 wandb
+deepspeed

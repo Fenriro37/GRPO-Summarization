@@ -12,9 +12,10 @@ docker run \
     -e NCCL_DEBUG=INFO \
     -e NCCL_IB_DISABLE=1 \
     -e NCCL_SHM_DISABLE=0 \
+    -e NCCL_IGNORE_DISABLED_P2P=1 \
     --rm \
     --memory="30g" \
-    --gpus all \
+    --gpus '"device=0,1"' \
     --shm-size=8g \
     maranzana/project \
     "/workspace/train.sh" \
