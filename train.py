@@ -5,7 +5,8 @@ import torch
 import wandb
 import json
 from datasets import load_dataset, Dataset, DatasetDict
-from unsloth import FastLanguageModel
+from transformers import AutoModelForCausalLM, AutoTokenizer,BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model
 from trl import GRPOConfig, GRPOTrainer
 import re
 import nltk
@@ -192,30 +193,26 @@ def main():
         return
 
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.model_name,
-        max_seq_length=args.max_seq_length,
-        load_in_4bit=True,
-        fast_inference=True,
-        max_lora_rank=args.lora_rank,
-        #gpu_memory_utilization=0.6,
-        #attn_implementation = "eager",
-        device_map = "auto",
-        #device_map = {"": accelerator.device},
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name,
+        device_map="auto",  
+        load_in_4bit=True,  
     )
-    print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
-    print("*"*50)
-    model = FastLanguageModel.get_peft_model(
-        model,
+
+    lora_config = LoraConfig(
         r=args.lora_rank,
         target_modules=[
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj",
         ],
         lora_alpha=args.lora_rank,
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
+        gradient_checkpointing=True,  
     )
+
+    model = get_peft_model(model, lora_config)
+    print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
+    print("*"*50)
 
     MAX_PROMPT_LENGTH =  args.max_seq_length- args.max_completion_length
     COMPLETION_CEILING = args.max_completion_length
