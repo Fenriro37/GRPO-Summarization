@@ -199,6 +199,8 @@ def main():
         #device_map="auto",  
         torch_dtype=torch.bfloat16,  
     )
+    print(model.config.max_position_embeddings)
+    print("*"*50)
 
     #model.gradient_checkpointing_enable()
 
@@ -224,9 +226,9 @@ def main():
         report_to="wandb",
         output_dir=args.output_dir,
         use_vllm=True,
-        vllm_mode="colocate",
-        vllm_tensor_parallel_size=1,
-        vllm_gpu_memory_utilization=0.4,
+        #vllm_mode="colocate",
+        #vllm_tensor_parallel_size=1,
+        #vllm_gpu_memory_utilization=0.4,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
