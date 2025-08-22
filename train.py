@@ -1,3 +1,5 @@
+from unsloth import FastLanguageModel, FastModel
+
 import torch.distributed as dist
 import argparse
 import os
@@ -14,9 +16,17 @@ import wandb
 from huggingface_hub import HfApi, create_repo, login
 from accelerate import Accelerator
 
-accelerator = Accelerator()
-rank_idx = accelerator.process_index
-print(f"[PID {os.getpid()}, Rank {rank_idx}] Accelerator initialized. Distributed: {accelerator.distributed_type}, Device: {accelerator.device}, Num_processes: {accelerator.num_processes}", flush=True)
+import transformers
+import vllm
+import unsloth
+
+print("Transformers version:", transformers.__version__)
+print("vLLM version:", vllm.__version__)
+print("Unsloth version:", unsloth.__version__)
+
+#accelerator = Accelerator()
+#rank_idx = accelerator.process_index
+#print(f"[PID {os.getpid()}, Rank {rank_idx}] Accelerator initialized. Distributed: {accelerator.distributed_type}, Device: {accelerator.device}, Num_processes: {accelerator.num_processes}", flush=True)
 
 # ===================================================================================
 # 1. REWARD FUNCTIONS
@@ -159,6 +169,7 @@ def parse_args():
     # W&B arguments
     parser.add_argument("--wandb_project", type=str, default="llama3-grpo-finetuning", help="The Weights & Biases project name.")
     parser.add_argument("--hf_repo_name", type=str, default="M4TT1A/my-llama3-grpo-lora", help="The name of the repository on the Hugging Face Hub (e.g., 'your-username/my-llama3-grpo-lora').")
+    #parser.add_argument("--hf_repo_name", type=str, default=None, help="The name of the repository on the Hugging Face Hub (e.g., 'your-username/my-llama3-grpo-lora').")
     return parser.parse_args()
 
 # ===================================================================================
@@ -192,30 +203,52 @@ def main():
         print(f"Error processing dataset file: {e}. Ensure it's a valid JSON with 'train', 'validation', and 'test' keys.")
         return
 
+    print(args.model_name)
+    #model, tokenizer = FastModel.from_pretrained(
+    #    model_name=args.model_name,
+    #    max_seq_length=args.max_seq_length,
+    #    load_in_4bit=True, 
+    #    #max_lora_rank=args.lora_rank,
+    #    gpu_memory_utilization=0.05,  
+    #)
+#
+    #model = FastModel.get_peft_model(
+    #    model,
+    #    finetune_vision_layers     = False, # Turn off for just text!
+    #    finetune_language_layers   = True,  # Should leave on!
+    #    finetune_attention_modules = True,  # Attention good for GRPO
+    #    finetune_mlp_modules       = True,  # SHould leave on always!
+#
+    #    r = 8,           # Larger = higher accuracy, but might overfit
+    #    lora_alpha = 8,  # Recommended alpha == r at least
+    #    lora_dropout = 0,
+    #    bias = "none",
+    #    random_state = 3407,
+    #)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        #device_map="auto",  
-        torch_dtype=torch.bfloat16,  
+
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = args.model_name,#"unsloth/Qwen3-4B-Base",
+        max_seq_length = args.max_seq_length,
+        load_in_4bit = True, # False for LoRA 16bit
+        fast_inference = True, # Enable vLLM fast inference
+        max_lora_rank = args.lora_rank,
+        gpu_memory_utilization = 0.05, # Reduce if out of memory
     )
-    print(model.config.max_position_embeddings)
-    print("*"*50)
 
-    #model.gradient_checkpointing_enable()
-
-    lora_config = LoraConfig(
-        r=args.lora_rank,
-        target_modules=[
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r = args.lora_rank, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+        target_modules = [
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj",
         ],
-        lora_alpha=args.lora_rank,
+        lora_alpha = args.lora_rank*2, # *2 speeds up training
+        use_gradient_checkpointing = "unsloth", # Reduces memory usage
+        random_state = 3407,
     )
-
-    model = get_peft_model(model, lora_config)
-
-    print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
+    #print(f"[PID {os.getpid()}, Rank {rank_idx}] Model loaded.", flush=True)
+    print(f"Model Loaded")
     print("*"*50)
 
     MAX_PROMPT_LENGTH =  args.max_seq_length- args.max_completion_length
@@ -223,12 +256,13 @@ def main():
     print('Befoere training')
     training_args = GRPOConfig(
         run_name=run_name,
+        fp16 = False,
         report_to="wandb",
         output_dir=args.output_dir,
         use_vllm=True,
         #vllm_mode="colocate",
         #vllm_tensor_parallel_size=1,
-        #vllm_gpu_memory_utilization=0.4,
+        vllm_gpu_memory_utilization=0.3,
         learning_rate=args.learning_rate,
         max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
@@ -242,8 +276,7 @@ def main():
         lr_scheduler_type="cosine",
         optim="paged_adamw_8bit",
         max_grad_norm=0.1,
-        ds3_gather_for_generation=False,
-
+        #ds3_gather_for_generation=False,
         num_generations=4,
         max_prompt_length=MAX_PROMPT_LENGTH,
         max_completion_length=COMPLETION_CEILING,
@@ -251,7 +284,7 @@ def main():
 
     trainer = GRPOTrainer(
         model=model,
-        #tokenizer=tokenizer,
+        tokenizer=tokenizer,
         reward_funcs=[
             reward_word_count_normalized,
             reward_sentence_count_normalized,
@@ -262,7 +295,7 @@ def main():
         eval_dataset=dataset_dict['validation'],
     )
 
-    print(f"[PID {os.getpid()}, Rank {accelerator.process_index}] Starting training, will connect to vLLM server for generation...")
+    #print(f"[PID {os.getpid()}, Rank {accelerator.process_index}] Starting training, will connect to vLLM server for generation...")
     trainer.train()
     print("Training finished.")
 
@@ -271,21 +304,20 @@ def main():
     if args.hf_repo_name:   
         wandb.finish()
         print('before unwrap')
-        unwrapped_model = accelerator.unwrap_model(trainer.model)
-        print(f"Inside if")
+        #unwrapped_model = accelerator.unwrap_model(trainer.model)
 
-        #print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
+        print(f"Pushing LoRA adapters to Hugging Face Hub: {args.hf_repo_name}")
 
         # Create the repo if it doesn't exist
-        #create_repo(args.hf_repo_name, exist_ok=True, private=False) # Set private=True if needed
+        create_repo(args.hf_repo_name, exist_ok=True, private=False) # Set private=True if needed
 
         # Push the LoRA adapters
-        #model.push_to_hub(args.hf_repo_name, use_auth_token=True)
+        model.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
         # Push the tokenizer
-        #tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
+        tokenizer.push_to_hub(args.hf_repo_name, use_auth_token=True)
 
-        #print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
+        print(f"Successfully pushed to https://huggingface.co/{args.hf_repo_name}")
     else:
         wandb.finish()
 

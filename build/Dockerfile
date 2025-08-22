@@ -30,8 +30,8 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 RUN python3 -m nltk.downloader punkt punkt_tab
-
-#RUN pip3 install flash-attn==2.7.4.post1 --no-build-isolation
+RUN pip install --upgrade --no-cache-dir vllm transformers
+RUN pip install --upgrade --force-reinstall --no-deps --no-cache-dir unsloth unsloth_zoo
 
 # Back to default frontend
 ENV DEBIAN_FRONTEND=dialog
