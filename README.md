@@ -32,6 +32,7 @@ The work is divided into two main stages:
 All notebooks are **self-contained and guided**, including installation, configuration, and execution steps.  
 Running them sequentially fully reproduces the dataset creation, training, and evaluation pipeline.
 
+All training and evaluation runs were **logged using Weights & Biases (W&B)**, ensuring full experiment traceability and reproducibility of results.
 
 **Note:**  
 The **Newsroom dataset** is not included in the repository due to file size limits.  
