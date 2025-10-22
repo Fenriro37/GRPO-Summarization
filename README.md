@@ -1,9 +1,9 @@
 # GRPO-Summarization: Constrained Text Summarization
 
-This repository contains the implementation of a university project for the **Text Mining** course.  
-The goal is to train a model capable of **controlled text summarization**, producing summaries that follow explicit **word or sentence length constraints**.
+This repository contains the implementation of a university project for the Text Mining course.  
+The goal is to train a model capable of controlled text summarization, producing summaries that follow explicit word or sentence length constraints.
 
-The project is based on **Grouped Reinforcement Preference Optimization (GRPO)** and **LoRA fine-tuning** using the **Unsloth + vLLM** framework.
+The project is based on Grouped Reinforcement Preference Optimization (GRPO) and LoRA fine-tuning using the Unsloth + vLLM framework.
 
 ---
 
@@ -29,10 +29,10 @@ The work is divided into two main stages:
 
 ## Replication
 
-All notebooks are **self-contained and guided**, including installation, configuration, and execution steps.  
+All notebooks are self-contained and guided, including installation, configuration, and execution steps.  
 Running them sequentially fully reproduces the dataset creation, training, and evaluation pipeline.
 
-All training and evaluation runs were **logged using Weights & Biases (W&B)**, ensuring full experiment traceability and reproducibility of results.
+All training and evaluation runs were logged using Weights & Biases (W&B), ensuring full experiment traceability and reproducibility of results.
 
 **Note:**  
 The **Newsroom dataset** is not included in the repository due to file size limits.  
