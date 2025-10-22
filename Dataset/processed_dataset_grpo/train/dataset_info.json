@@ -1,0 +1,69 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "document": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "summary": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "document_word_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "summary_word_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "summary_sentence_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "split_word": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "split_sentence": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "dataset": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "split": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "prompt": {
+      "feature": {
+        "content": {
+          "dtype": "string",
+          "_type": "Value"
+        },
+        "role": {
+          "dtype": "string",
+          "_type": "Value"
+        }
+      },
+      "_type": "List"
+    },
+    "target_word_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "target_sentence_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}
