@@ -38,4 +38,4 @@ All training and evaluation runs were logged using Weights & Biases (W&B), ensur
 The **Newsroom dataset** is not included in the repository due to file size limits.  
 You can download it from:  
 [https://lil.nlp.cornell.edu/newsroom/download/index.html](https://lil.nlp.cornell.edu/newsroom/download/index.html)  
-Place the test split in the `Dataset/` folder and rename it to:
+Place the test split in the `Dataset/` folder and rename it to: `newsroom_test.jsonl`
